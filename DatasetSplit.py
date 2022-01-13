@@ -10,33 +10,49 @@ import os
 import shutil
 
 # os.path.abspath(os.getcwd())
-# os.chdir('./2016')
+# os.chdir('./Desktop/Thesis/Codes/2017_Copy')
 
-train_groundTruth = pd.read_csv('ISBI2016_ISIC_Part3_Training_GroundTruth.csv', names = ['image', 'target'])
-test_groundTruth = pd.read_csv('ISBI2016_ISIC_Part3_Test_GroundTruth.csv', names = ['image', 'target'])
+train_groundTruth = pd.read_csv('ISIC-2017_Training_Part3_GroundTruth.csv', names = ['image_id', 'melanoma', 'seborrheic_keratosis'])
+validation_groundTruth = pd.read_csv('ISIC-2017_Validation_Part3_GroundTruth.csv', names = ['image_id', 'melanoma', 'seborrheic_keratosis'])
+test_groundTruth = pd.read_csv('ISIC-2017_Test_v2_Part3_GroundTruth.csv', names = ['image_id', 'melanoma', 'seborrheic_keratosis'])
 
-src1 = 'ISBI2016_ISIC_Part1_Training_Data'
-dst1 = '2016_Copy/train/m'
-dst2 = '2016_Copy/train/b'
+# print(validation_groundTruth['melanoma'][26] == '1.0')
 
-src2 = 'ISBI2016_ISIC_Part1_Test_Data'
-dst3 = '2016_Copy/test/m'
-dst4 = '2016_Copy/test/b'
+src1 = 'ISIC-2017_Training_Data'
+dst1 = 'train/1'
+dst2 = 'train/0'
 
-for i in range(len(train_groundTruth)):
-    if (train_groundTruth['target'][i] == 'malignant'):
-        srcNew = os.path.join(src1, train_groundTruth['image'][i] + '.jpg')
+src2 = 'ISIC-2017_Validation_Data'
+dst3 = 'validation/1'
+dst4 = 'validation/0'
+
+src3 = 'ISIC-2017_Test_v2_Data'
+dst5 = 'test/1'
+dst6 = 'test/0'
+
+for i in range(1, len(train_groundTruth)):
+    if (train_groundTruth['melanoma'][i] == '1.0'):
+        srcNew = os.path.join(src1, train_groundTruth['image_id'][i] + '.jpg')
         shutil.move(srcNew, dst1)
     else:
-        srcNew = os.path.join(src1, train_groundTruth['image'][i] + '.jpg')
+        srcNew = os.path.join(src1, train_groundTruth['image_id'][i] + '.jpg')
         shutil.move(srcNew, dst2)
 
 
-for i in range(len(test_groundTruth)):
-    if (test_groundTruth['target'][i] == 1):
-        srcNew = os.path.join(src2, test_groundTruth['image'][i] + '.jpg')
+for i in range(1, len(validation_groundTruth)):
+    if (validation_groundTruth['melanoma'][i] == '1.0'):
+        srcNew = os.path.join(src2, validation_groundTruth['image_id'][i] + '.jpg')
         shutil.move(srcNew, dst3)
     else:
-        srcNew = os.path.join(src2, test_groundTruth['image'][i] + '.jpg')
+        srcNew = os.path.join(src2, validation_groundTruth['image_id'][i] + '.jpg')
         shutil.move(srcNew, dst4)
+     
+        
+for i in range(1, len(test_groundTruth)):
+    if (test_groundTruth['melanoma'][i] == '1.0'):
+        srcNew = os.path.join(src3, test_groundTruth['image_id'][i] + '.jpg')
+        shutil.move(srcNew, dst5)
+    else:
+        srcNew = os.path.join(src3, test_groundTruth['image_id'][i] + '.jpg')
+        shutil.move(srcNew, dst6)
         
