@@ -22,16 +22,18 @@ import matplotlib.pyplot as plt
 import cv2 as cv
 # import glob
 import os
+from keras import backend as K
 
 # tf.debugging.set_log_device_placement(True)
 
 # os.path.abspath(os.getcwd())
 # os.chdir('./Desktop/Thesis/Codes')
 
-project_name = "resnet_v2.ResNet50V2 sweep - 8-1"
+project_name = "resnet_v2.ResNet50V2 sweep - 12-1"
+dataset = "2017_Copy"
 
 sweep_config = {
-  'method': 'grid', 
+  'method': 'random', 
   'metric': {
       'name': 'val_loss',
       'goal': 'minimize'
@@ -42,41 +44,51 @@ sweep_config = {
   },
   'parameters': {
       'batch_size': {
-          'values': [16, 32, 64, 128]
+          'values': [16, 32, 64]
       },
-      'learning_rate':{
-          'values': [0.01, 0.005, 0.001, 0.0005, 0.0001]
+      'learning_rate': {
+          'values': [0.00001, 0.00005, 0.0001]
       },
-       'epochs':{
-           'values': [30, 40, 50]
+      'epochs':{
+          'values': [10, 15, 20, 25, 30, 35]
+      },
+      'dropout':{
+          'values': [0.4, 0.5, 0.6, 1]
       }
   }
 }
 
 def run():
     
-    train_dir = "2016_Copy/train"
-    test_dir = "2016_Copy/test"
-    # data_dir = "2016_Copy_2"
-    image_size = (224, 224)
-    # epochs = 5
-    # batch_size = 3
-    # learning_rate = 0.001
-    optimizer = tf.keras.optimizers.Adam(wandb.config.learning_rate)
+    train_dir = os.path.join(dataset, "train")
+    validation_dir = os.path.join(dataset, "validation")
+    test_dir = os.path.join(dataset, "test")
+    
+    img_size = 224
+    image_size = (img_size, img_size)
+    epochs = wandb.config.epochs
+    batch_size = wandb.config.batch_size
+    learning_rate = wandb.config.learning_rate
+    dropout = wandb.config.dropout
+    dense = 256
+    optimizer = tf.keras.optimizer.Adam(learning_rate)
     loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits = False)
     metrics = ['accuracy']
     
-    print(wandb.config.epochs)
     print(image_size)
-    print(wandb.config.batch_size)
-    print(wandb.config.learning_rate)
-
+    print(epochs)
+    print(batch_size)
+    print(learning_rate)
+    print(dropout)
+    print(dense)
+    print(optimizer)
 
     print(f'Train benign length is: {len(os.listdir(os.path.join(train_dir, "0")))}')
     print(f'Train malignant length is: {len(os.listdir(os.path.join(train_dir, "1")))}')
+    print(f'Validation benign length is: {len(os.listdir(os.path.join(validation_dir, "0")))}')
+    print(f'Validation malignant length is: {len(os.listdir(os.path.join(validation_dir, "1")))}')
     print(f'Test benign length is: {len(os.listdir(os.path.join(test_dir, "0")))}')
     print(f'Test malignant length is: {len(os.listdir(os.path.join(test_dir, "1")))}')
-    
     
     train_ds = tf.keras.preprocessing.image_dataset_from_directory(
         train_dir,
@@ -84,24 +96,24 @@ def run():
         # subset = 'training',
         # seed = 123,
         color_mode = 'rgb',
-        batch_size = wandb.config.batch_size,
+        batch_size = batch_size,
         image_size = image_size
     )
     
-    # val_ds = tf.keras.preprocessing.image_dataset_from_directory(
-    #     train_dir,
-    #     validation_split = 0.2,
-    #     subset = 'validation',
-    #     seed = 123,
-    #     color_mode = 'rgb',
-    #     batch_size = batch_size,
-    #     image_size = image_size
-    # )
+    val_ds = tf.keras.preprocessing.image_dataset_from_directory(
+        validation_dir,
+        # validation_split = 0.2,
+        # subset = 'validation',
+        # seed = 123,
+        color_mode = 'rgb',
+        batch_size = batch_size,
+        image_size = image_size
+    )
     
     test_ds = tf.keras.preprocessing.image_dataset_from_directory(
         test_dir,
         color_mode = 'rgb',
-        batch_size = wandb.config.batch_size,
+        batch_size = batch_size,
         image_size = image_size
     )
     
@@ -120,24 +132,31 @@ def run():
     myModel.add(tf.keras.layers.experimental.preprocessing.Rescaling((1./255)))
     myModel.add(base_model)
     myModel.add(tf.keras.layers.GlobalAveragePooling2D())
-    myModel.add(tf.keras.layers.Dropout(0.3))
-    myModel.add(tf.keras.layers.Dense(512, activation='relu'))
-    myModel.add(tf.keras.layers.Dropout(0.3))
+    myModel.add(tf.keras.layers.Dropout(dropout))
+    myModel.add(tf.keras.layers.Dense(dense, activation='relu'))
+    myModel.add(tf.keras.layers.Dropout(dropout))
     myModel.add(tf.keras.layers.Dense(len(class_names), activation='softmax'))
     
     myModel.compile(optimizer = optimizer,
                     loss = loss,
                     metrics = metrics)
     
+    # K.set_value(myModel.optimizer.learning_rate, learning_rate)
+    
+    print(myModel.optimizer)
+    print(myModel.optimizer.learning_rate)
+    
     history = myModel.fit(train_ds,
-                          validation_data = test_ds,
-                          epochs = wandb.config.epochs,
+                          validation_data = val_ds,
+                          epochs = epochs,
                           callbacks = [WandbCallback()])
     
-    (eval_loss, eval_accuracy) = myModel.evaluate(test_ds, 
-                                                  batch_size = wandb.config.batch_size, 
-                                                  verbose = 1)
+    print('\n')
     
+    (eval_loss, eval_accuracy) = myModel.evaluate(test_ds, 
+                                                  batch_size = batch_size, 
+                                                  verbose = 1)
+
     print('[INFO] accuracy: {:.2f}%'.format(eval_accuracy * 100)) 
     print('[INFO] Loss: {}'.format(eval_loss)) 
     
@@ -151,7 +170,7 @@ def run():
     
     for image, labels in test_ds.as_numpy_iterator():
       for a in range(len(labels)):
-        pred = myModel.predict(image[a].reshape(1, 224, 224, 3))
+        pred = myModel.predict(image[a].reshape(1, img_size, img_size, 3))
         probas.append(pred[0])
         list_predictions.append(class_names1[np.argmax(pred)])
         list_labels.append(class_names1[labels[a]])
@@ -174,33 +193,33 @@ def run():
     print('F1-score : ', f1)
     
     
-    print('image name \t\t\t predicted  \t confidence \t actual class')
+    # print('image name \t\t\t predicted  \t confidence \t actual class')
     
-    folder = '2016_Copy/test/1'
-    actual_class = '1'
-    malignant_resutls = np.empty([1, 4])
-    for filename in os.listdir(folder):
-        img_name = os.path.join(folder, filename)
-        img = tf.keras.preprocessing.image.load_img(img_name, target_size = image_size)
-        img_array = tf.keras.preprocessing.image.img_to_array(img)
-        img_array = tf.expand_dims(img_array, 0)
-        predictions = myModel.predict(img_array)
-        score = tf.nn.softmax(predictions[0])
-        malignant_resutls = np.append(malignant_resutls, [[ img_name, class_names[np.argmax(score)], 100 * np.max(score), actual_class ]], axis = 0)
-        # print(f"{img_name}\t{class_names[np.argmax(score)]}\t{100 * np.max(score)}\t{actual_class}")
+    # folder = '2016_Copy/test/1'
+    # actual_class = '1'
+    # malignant_resutls = np.empty([1, 4])
+    # for filename in os.listdir(folder):
+    #     img_name = os.path.join(folder, filename)
+    #     img = tf.keras.preprocessing.image.load_img(img_name, target_size = image_size)
+    #     img_array = tf.keras.preprocessing.image.img_to_array(img)
+    #     img_array = tf.expand_dims(img_array, 0)
+    #     predictions = myModel.predict(img_array)
+    #     score = tf.nn.softmax(predictions[0])
+    #     malignant_resutls = np.append(malignant_resutls, [[ img_name, class_names[np.argmax(score)], 100 * np.max(score), actual_class ]], axis = 0)
+    #     # print(f"{img_name}\t{class_names[np.argmax(score)]}\t{100 * np.max(score)}\t{actual_class}")
     
-    folder = '2016_Copy/test/0'
-    actual_class = '0'
-    benign_results = np.empty([1, 4])
-    for filename in os.listdir(folder):
-        img_name = os.path.join(folder, filename)
-        img = tf.keras.preprocessing.image.load_img(img_name, target_size = image_size)
-        img_array = tf.keras.preprocessing.image.img_to_array(img)
-        img_array = tf.expand_dims(img_array, 0)
-        predictions = myModel.predict(img_array)
-        score = tf.nn.softmax(predictions[0])
-        benign_results = np.append(benign_results, [[ img_name, class_names[np.argmax(score)], 100 * np.max(score), actual_class ]], axis = 0)
-        # print(f"{img_name}\t{class_names[np.argmax(score)]}\t{100 * np.max(score)}\t{actual_class}")
+    # folder = '2016_Copy/test/0'
+    # actual_class = '0'
+    # benign_results = np.empty([1, 4])
+    # for filename in os.listdir(folder):
+    #     img_name = os.path.join(folder, filename)
+    #     img = tf.keras.preprocessing.image.load_img(img_name, target_size = image_size)
+    #     img_array = tf.keras.preprocessing.image.img_to_array(img)
+    #     img_array = tf.expand_dims(img_array, 0)
+    #     predictions = myModel.predict(img_array)
+    #     score = tf.nn.softmax(predictions[0])
+    #     benign_results = np.append(benign_results, [[ img_name, class_names[np.argmax(score)], 100 * np.max(score), actual_class ]], axis = 0)
+    #     # print(f"{img_name}\t{class_names[np.argmax(score)]}\t{100 * np.max(score)}\t{actual_class}")
     
     # wandb.Image(str(img_name))
     
@@ -214,12 +233,14 @@ def run():
     # plt.show()
     
     hyperparameters_table = wandb.Table(columns = ["Parameter", "Value"], 
-                                        data = [["image_size", str(image_size)], 
+                                        data = [["image_size", str(img_size)], 
                                                 ["optimizer", str(optimizer)],
                                                 ["loss function", str(loss)],
-                                                ["learning_rate", str(wandb.config.learning_rate)],
-                                                ["epochs", str(wandb.config.epochs)],
-                                                ["batch_size", str(wandb.config.batch_size)]])
+                                                ["learning_rate", str(learning_rate)],
+                                                ["epochs", str(epochs)],
+                                                ["batch_size", str(batch_size)],
+                                                ["dense", str(dense)],
+                                                ["dropout", str(dropout)]])
     
     metrics_table = wandb.Table(columns = ["Metric", "Value"], 
                                 data = [["Accuracy", str(accuracy)], 
@@ -258,4 +279,4 @@ def sweep_train(config_defaults=None):
 
 sweep_id = wandb.sweep(sweep_config, project = project_name)
 
-wandb.agent(sweep_id, function = sweep_train)
+wandb.agent(sweep_id, function = sweep_train, count = 50)
