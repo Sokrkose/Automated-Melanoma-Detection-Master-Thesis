@@ -6,20 +6,20 @@ Created on Sat Jan  1 11:49:35 2022
 """
 
 import tensorflow as tf
-# from tensorflow import keras
+from tensorflow import keras
 # from tensorflow.keras.layers import Flatten, Dense, Dropout
 # from keras.models import Model
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, recall_score, precision_score, f1_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, recall_score, precision_score, f1_score, log_loss, roc_auc_score
 import numpy as np
 # import statistics
 import wandb
 # from wandb import util
 from wandb.keras import WandbCallback
-from wandb.sdk.data_types import Image
+# from wandb.sdk.data_types import Image
 # import matplotlib.image as mpimg
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 # import PIL
-import cv2 as cv
+# import cv2 as cv
 # import glob
 import os
 from keras import backend as K
@@ -29,14 +29,17 @@ from keras import backend as K
 # os.path.abspath(os.getcwd())
 # os.chdir('./Desktop/Thesis/Codes')
 
-project_name = "resnet_v2.ResNet50V2 sweep - 12-1"
+# gpu_options = tf.GPUOptions(allow_growth = True)
+# session = tf.InteractiveSession(config = tf.ConfigProto(gpu_options = gpu_options))
+
+project_name = "resnet_v2.ResNet50V2 sweep - 18-1"
 dataset = "2017_Copy"
 
 sweep_config = {
   'method': 'random', 
   'metric': {
-      'name': 'val_loss',
-      'goal': 'minimize'
+      'name': 'val_accuracy',
+      'goal': 'maximize'
   },
   'early_terminate':{
       'type': 'hyperband',
@@ -44,16 +47,28 @@ sweep_config = {
   },
   'parameters': {
       'batch_size': {
-          'values': [16, 32, 64]
+          'values': [8, 16, 32]
       },
       'learning_rate': {
           'values': [0.00001, 0.00005, 0.0001]
       },
       'epochs':{
-          'values': [10, 15, 20, 25, 30, 35]
+          'values': [25, 30, 35, 40, 45, 50, 60]
       },
       'dropout':{
-          'values': [0.4, 0.5, 0.6, 1]
+          'values': [0.3, 0.4, 0.5, 0.6]
+      },
+      'imageSize':{
+          'values': [224, 254, 299]    
+      },
+      'dense':{
+          'values': [256, 512, 1024]    
+      },
+      'hiddenLayers':{
+          'values': [1, 2, 3, 4, 5]
+      },
+      'trainable_weights':{
+          'values': [True, False]
       }
   }
 }
@@ -61,34 +76,38 @@ sweep_config = {
 def run():
     
     train_dir = os.path.join(dataset, "train")
-    validation_dir = os.path.join(dataset, "validation")
+    # validation_dir = os.path.join(dataset, "validation")
     test_dir = os.path.join(dataset, "test")
     
-    img_size = 224
+    base_weights = wandb.config.trainable_weights
+    hidden_layers = wandb.config.hiddenLayers
+    img_size = wandb.config.imageSize
     image_size = (img_size, img_size)
     epochs = wandb.config.epochs
     batch_size = wandb.config.batch_size
     learning_rate = wandb.config.learning_rate
     dropout = wandb.config.dropout
-    dense = 256
-    optimizer = tf.keras.optimizer.Adam(learning_rate)
+    dense = wandb.config.dense
+    optimizer = keras.optimizers.Adam(learning_rate)
     loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits = False)
     metrics = ['accuracy']
     
+    print(base_weights)
+    print(hidden_layers)
     print(image_size)
     print(epochs)
     print(batch_size)
     print(learning_rate)
+    print(optimizer)
     print(dropout)
     print(dense)
-    print(optimizer)
 
-    print(f'Train benign length is: {len(os.listdir(os.path.join(train_dir, "0")))}')
-    print(f'Train malignant length is: {len(os.listdir(os.path.join(train_dir, "1")))}')
-    print(f'Validation benign length is: {len(os.listdir(os.path.join(validation_dir, "0")))}')
-    print(f'Validation malignant length is: {len(os.listdir(os.path.join(validation_dir, "1")))}')
-    print(f'Test benign length is: {len(os.listdir(os.path.join(test_dir, "0")))}')
-    print(f'Test malignant length is: {len(os.listdir(os.path.join(test_dir, "1")))}')
+    # print(f'Train benign length is: {len(os.listdir(os.path.join(train_dir, "0")))}')
+    # print(f'Train malignant length is: {len(os.listdir(os.path.join(train_dir, "1")))}')
+    # print(f'Validation benign length is: {len(os.listdir(os.path.join(validation_dir, "0")))}')
+    # print(f'Validation malignant length is: {len(os.listdir(os.path.join(validation_dir, "1")))}')
+    # print(f'Test benign length is: {len(os.listdir(os.path.join(test_dir, "0")))}')
+    # print(f'Test malignant length is: {len(os.listdir(os.path.join(test_dir, "1")))}')
     
     train_ds = tf.keras.preprocessing.image_dataset_from_directory(
         train_dir,
@@ -100,15 +119,15 @@ def run():
         image_size = image_size
     )
     
-    val_ds = tf.keras.preprocessing.image_dataset_from_directory(
-        validation_dir,
-        # validation_split = 0.2,
-        # subset = 'validation',
-        # seed = 123,
-        color_mode = 'rgb',
-        batch_size = batch_size,
-        image_size = image_size
-    )
+    # val_ds = tf.keras.preprocessing.image_dataset_from_directory(
+    #     validation_dir,
+    #     # validation_split = 0.2,
+    #     # subset = 'validation',
+    #     # seed = 123,
+    #     color_mode = 'rgb',
+    #     batch_size = batch_size,
+    #     image_size = image_size
+    # )
     
     test_ds = tf.keras.preprocessing.image_dataset_from_directory(
         test_dir,
@@ -118,24 +137,27 @@ def run():
     )
     
     class_names = train_ds.class_names
-    # print(class_names)
     class_names1 = test_ds.class_names
-    # print(class_names1)
+    
+    train_ds = train_ds.prefetch(buffer_size = 32)
+    # val_ds = val_ds.prefetch(buffer_size = 32)
+    test_ds = test_ds.prefetch(buffer_size = 32)
     
     base_model = tf.keras.applications.resnet_v2.ResNet50V2(include_top = False, 
                                                             input_shape = image_size + (3,), 
                                                             weights = 'imagenet')
-     
-    base_model.trainable = False
+    
+    base_model.trainable = base_weights
     
     myModel = tf.keras.models.Sequential()
     myModel.add(tf.keras.layers.experimental.preprocessing.Rescaling((1./255)))
     myModel.add(base_model)
     myModel.add(tf.keras.layers.GlobalAveragePooling2D())
     myModel.add(tf.keras.layers.Dropout(dropout))
-    myModel.add(tf.keras.layers.Dense(dense, activation='relu'))
-    myModel.add(tf.keras.layers.Dropout(dropout))
-    myModel.add(tf.keras.layers.Dense(len(class_names), activation='softmax'))
+    for i in range(hidden_layers):
+        myModel.add(tf.keras.layers.Dense(dense, activation = 'relu'))
+        myModel.add(tf.keras.layers.Dropout(dropout))
+    myModel.add(tf.keras.layers.Dense(len(class_names), activation = 'softmax'))
     
     myModel.compile(optimizer = optimizer,
                     loss = loss,
@@ -147,7 +169,7 @@ def run():
     print(myModel.optimizer.learning_rate)
     
     history = myModel.fit(train_ds,
-                          validation_data = val_ds,
+                          validation_data = test_ds,
                           epochs = epochs,
                           callbacks = [WandbCallback()])
     
@@ -179,19 +201,32 @@ def run():
     sensitivity = cm[0, 0] / (cm[0, 0] + cm[0, 1])
     specificity = cm[1, 1] / (cm[1, 1] + cm[1, 0])
     accuracy = accuracy_score(list_labels, list_predictions)
-    recall = recall_score(list_labels, list_predictions, pos_label = '0')
-    precision = precision_score(list_labels, list_predictions, pos_label = '0')
-    f1 = f1_score(list_labels, list_predictions, pos_label = '0')
+    recall_0 = recall_score(list_labels, list_predictions, pos_label = '0')
+    precision_0 = precision_score(list_labels, list_predictions, pos_label = '0')
+    f1_0 = f1_score(list_labels, list_predictions, pos_label = '0')
+    recall_1 = recall_score(list_labels, list_predictions, pos_label = '1')
+    precision_1 = precision_score(list_labels, list_predictions, pos_label = '1')
+    f1_1 = f1_score(list_labels, list_predictions, pos_label = '1')
+
+    y_true = np.array(list_labels)
+    y_prob = np.array(probas)
+    
+    test_loss = log_loss(y_true, y_prob)
+    auc = roc_auc_score(y_true, y_prob[:,1])
     
     print(classification_report(list_labels, list_predictions))
     print(cm)
     print('Accuarcy : ', accuracy)
+    print('Log Loss : ', test_loss)
+    print('AUC : ', auc)
     print('Sensitivity (TPR) : ', sensitivity)
     print('Specificity (TNR) : ', specificity)
-    print('Recall : ', recall)
-    print('Precision : ', precision)
-    print('F1-score : ', f1)
-    
+    print('Recall_0 : ', recall_0)
+    print('Precision_0 : ', precision_0)
+    print('F1-score_0 : ', f1_0)
+    print('Recall_1 : ', recall_1)
+    print('Precision_1 : ', precision_1)
+    print('F1-score_1 : ', f1_1)
     
     # print('image name \t\t\t predicted  \t confidence \t actual class')
     
@@ -240,16 +275,23 @@ def run():
                                                 ["epochs", str(epochs)],
                                                 ["batch_size", str(batch_size)],
                                                 ["dense", str(dense)],
-                                                ["dropout", str(dropout)]])
+                                                ["dropout", str(dropout)],
+                                                ["hidden layers", str(hidden_layers)],
+                                                ["trainable weights", str(base_weights)]])
     
     metrics_table = wandb.Table(columns = ["Metric", "Value"], 
-                                data = [["Accuracy", str(accuracy)], 
+                                data = [["Accuracy", str(accuracy)],
+                                        ["Loss", str(log_loss)],
+                                        ["AUC", str(auc)],
                                         ["Sensitivity (TPR)", str(sensitivity)],
                                         ["Specificity (TNR)", str(specificity)],
-                                        ["Recall", str(recall)],
-                                        ["Precision", str(precision)],
-                                        ["F1-score", str(f1)]])
-    
+                                        ["Recall_0", str(recall_0)],
+                                        ["Precision_0", str(precision_0)],
+                                        ["F1-score_0", str(f1_0)],
+                                        ["Recall_1", str(recall_1)],
+                                        ["Precision_1", str(precision_1)],
+                                        ["F1-score_1", str(f1_1)]])
+
     # image_results = wandb.Table(columns = ["image", "predicted class", "confidence of prediction", "actual class"],
     #                             data = all_results)
     
